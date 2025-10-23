@@ -26,6 +26,7 @@ LANG = 'ru_RU'
 # State files
 WEATHER_STATE_FILE = 'weather_state.json'
 SCHEDULE_STATE_FILE = 'schedule_state.json'
+MUSIC_STATE_FILE = 'music_state.json'
 
 # Logging
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(message)s'

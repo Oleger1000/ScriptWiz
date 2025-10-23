@@ -1,8 +1,9 @@
 import weather, schedule_npi
 from json_state import save_state
-from config import WEATHER_STATE_FILE, SCHEDULE_STATE_FILE, CONTROL_CHAT_ID, AVATARS_DIR
+from config import WEATHER_STATE_FILE, SCHEDULE_STATE_FILE, CONTROL_CHAT_ID, AVATARS_DIR, MUSIC_STATE_FILE
 import logging
 from mention_all import mention_all
+from music_status import music_manager
 
 # в начале файла
 from images import get_random_avatar, prepare_image
@@ -76,11 +77,25 @@ async def handle_command(client, event, states):
             states['schedule'] = False
             save_state(SCHEDULE_STATE_FILE, False)
             await event.reply("❌ Расписание выключено.")
+        case "вкл_музыка":
+            if music_manager:
+                music_manager.enable()
+            states['music'] = True
+            save_state(MUSIC_STATE_FILE, True)
+            await event.reply("✅ Живой статус музыки включён.")
+        case "выкл_музыка":
+            if music_manager:
+                await music_manager.disable_with_placeholder()
+            states['music'] = False
+            save_state(MUSIC_STATE_FILE, False)
+            await event.reply("❌ Живой статус музыки выключен. Установлен статичный статус.")
         case "статус":
             status_text = (
                 f"🌦 Погода: {'включён ✅' if states['weather'] else 'выключен ❌'}\n"
                 f"🖼 Автосмена аватарок: {'включена ✅' if states['avatar'] else 'выключена ❌'}\n"
                 f"📅 Расписание: {'включено ✅' if states['schedule'] else 'выключено ❌'}"
+                f"🎵 Музыка: {'включен ✅' if states['music'] else 'выключен ❌'}\n"
+
             )
             await event.reply(status_text)
         case "help":

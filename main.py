@@ -19,7 +19,8 @@ client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 states = {
     'weather': load_state(WEATHER_STATE_FILE, False),
     'avatar': True,
-    'schedule': load_state(SCHEDULE_STATE_FILE, True)
+    'schedule': load_state(SCHEDULE_STATE_FILE, True),
+    'music': load_state(MUSIC_STATE_FILE, True)
 }
 
 # Проверка перед отправкой

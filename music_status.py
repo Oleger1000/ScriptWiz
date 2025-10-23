@@ -3,7 +3,10 @@ import logging
 from datetime import datetime, timedelta
 from aiohttp import web
 import json
+from json_state import save_state
 from telethon.tl.functions.account import UpdateProfileRequest
+
+STATE_FILE = "music_state.json"
 
 class MusicStatusManager:
     def __init__(self, client):
@@ -25,7 +28,7 @@ class MusicStatusManager:
         
         try:
             # Форматируем описание
-            about = f"🎵 {track_info}" if track_info else ""
+            about = f"🎵Сейчас играет:\n {track_info}" if track_info else ""
             
             # Обрезаем если слишком длинное (максимум 70 символов для Telegram)
             about = about[:70]
@@ -74,10 +77,40 @@ async def handle_music_update(request):
         logging.error(f"Ошибка обработки запроса: {e}")
         return web.json_response({'status': 'error', 'message': str(e)}, status=400)
 
+
+
+async def handle_toggle(request):
+    """Обработчик переключения статуса (вкл/выкл)"""
+    global music_manager
+    if music_manager is None:
+        return web.json_response({'status': 'error', 'message': 'Music manager not initialized'}, status=500)
+    
+    data = await request.json()
+    action = data.get('action', '').lower()
+    
+    if action == 'enable':
+        music_manager.enable()
+        return web.json_response({'status': 'enabled'})
+    elif action == 'disable':
+        music_manager.disable()
+        return web.json_response({'status': 'disabled'})
+    else:
+        return web.json_response({'status': 'error', 'message': 'Unknown action'}, status=400)
+    
+async def handle_get_state(request):
+    """Возвращает текущее состояние музыки"""
+    global music_manager
+    if music_manager is None:
+        return web.json_response({'enabled': False})
+    return web.json_response({'enabled': music_manager.is_enabled})
+
+
+
 async def start_web_server(port=8888):
     """Запуск web-сервера для приема статусов"""
     app = web.Application()
     app.router.add_post('/music/update', handle_music_update)
+    app.router.add_get('/music/state', handle_get_state)
     
     # Добавляем CORS middleware
     async def cors_middleware(app, handler):
@@ -117,9 +150,25 @@ async def start_web_server(port=8888):
     logging.error("❌ Все порты заняты, не удалось запустить web-сервер")
     return None
 
+
+
+async def disable_with_placeholder(self):
+        """Отключает обновление и ставит статичный статус"""
+        self.is_enabled = False
+        save_state(STATE_FILE, False)
+        placeholder = "олег"
+        try:
+            await self.client(UpdateProfileRequest(about=placeholder))
+            self.current_status = placeholder
+            logging.info("⏸ Музыкальный статус выключен и заменён заглушкой.")
+        except Exception as e:
+            logging.error(f"Ошибка при установке заглушки: {e}")
+
 def init_music_manager(client):
     """Инициализация менеджера музыки (должна быть вызвана из main)"""
     global music_manager
     music_manager = MusicStatusManager(client)
     logging.info("✅ MusicManager инициализирован")
     return music_manager
+
+
