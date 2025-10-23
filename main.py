@@ -4,6 +4,7 @@ import schedule
 from telethon import TelegramClient, events
 from config import *
 from json_state import load_state
+from music_status import MusicStatusManager, init_music_manager, start_web_server
 from commands import handle_command
 from images import get_random_avatar, prepare_image
 from weather import send_weather_card
@@ -60,6 +61,16 @@ async def scheduler_loop():
 async def main():
     await client.start()
     logging.info("🤖 Клиент готов.")
+
+    # Инициализация менеджера музыки ДО запуска web-сервера
+    init_music_manager(client)
+    
+    # Запуск web-сервера для статусов музыки
+    port = await start_web_server(8888)  # Используем порт 8889
+    if port:
+        logging.info(f"✅ Web-сервер запущен на порту {port}")
+    else:
+        logging.error("❌ Не удалось запустить web-сервер")
 
     # Планировщик
     schedule.every().day.at("00:00").do(lambda: asyncio.create_task(job_avatar()))
