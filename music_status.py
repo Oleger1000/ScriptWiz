@@ -3,45 +3,76 @@ import logging
 from datetime import datetime, timedelta
 from aiohttp import web
 import json
-from json_state import save_state
+from json_state import save_state, load_state
 from telethon.tl.functions.account import UpdateProfileRequest
 
 STATE_FILE = "music_state.json"
+
+
 
 class MusicStatusManager:
     def __init__(self, client):
         self.client = client
         self.current_status = None
         self.last_update = None
-        self.is_enabled = True
-    
+        self.is_enabled = True  # live-режим
+        self.forced_status = None  # принудительный статус (плейсхолдер)
+
     async def update_music_status(self, track_info):
-        """Обновляет статус профиля с информацией о треке"""
+        # Если forced_status задан — блокируем любые новые треки
+        if self.forced_status:
+            if self.current_status != self.forced_status:
+                try:
+                    await self.client(UpdateProfileRequest(about=self.forced_status[:70]))
+                    self.current_status = self.forced_status
+                    logging.info(f"⏸ Forced placeholder установлен: {self.forced_status}")
+                except Exception as e:
+                    logging.error(f"Ошибка установки forced placeholder: {e}")
+            return  # трек игнорируем полностью
+        
+        if not self.is_enabled and self.forced_status:
+            logging.debug("🎵 Игнорируем обновление, live выключен")
+            return
+
         if not self.is_enabled:
+            return  # live выключен без forced_status
+
+        # Ограничение по частоте обновлений
+        if (self.last_update and datetime.now() - self.last_update < timedelta(seconds=30)
+            and self.current_status == track_info):
             return
-        
-        # Ограничиваем частоту обновлений (не чаще чем раз в 30 секунд)
-        if (self.last_update and 
-            datetime.now() - self.last_update < timedelta(seconds=30) and
-            self.current_status == track_info):
-            return
-        
+
         try:
-            # Форматируем описание
-            about = f"🎵Сейчас играет:\n {track_info}" if track_info else ""
-            
-            # Обрезаем если слишком длинное (максимум 70 символов для Telegram)
+            about = f"🎵 {track_info}" if track_info else ""
             about = about[:70]
-            
             await self.client(UpdateProfileRequest(about=about))
-            
             self.current_status = track_info
             self.last_update = datetime.now()
-            
             logging.info(f"🎵 Обновлен статус профиля: {track_info}")
-            
         except Exception as e:
             logging.error(f"Ошибка обновления статуса: {e}")
+
+    def disable_with_placeholder(self):
+        self.is_enabled = False
+        self.forced_status = "🎵 Музыка приостановлена"
+        self.current_status = self.forced_status  # <--- вот это критично
+        save_state(STATE_FILE, False)
+        try:
+            self.client(UpdateProfileRequest(about=self.forced_status[:70]))
+            logging.info("⏸ Музыкальный статус выключен и установлен forced placeholder")
+        except Exception as e:
+            logging.error(f"Ошибка при установке forced placeholder: {e}")
+
+
+    def enable(self):
+        self.is_enabled = True
+        self.forced_status = None  # снимаем блокировку
+        save_state(STATE_FILE, True)
+        logging.info("▶ Live-статус музыки включен")
+        # сброс таймера last_update, чтобы следующий трек сразу обновил статус
+        self.last_update = None
+
+
 
 # Глобальная переменная для менеджера - ИНИЦИАЛИЗИРУЕМ КАК None
 music_manager = None
@@ -65,13 +96,18 @@ async def handle_music_update(request):
         
         logging.info(f"🎵 Получен трек от клиента: {track_info}")
         
+        if not music_manager.is_enabled:
+            # статус выключен — ставим плейсхолдер
+            await music_manager.disable_with_placeholder()
+            return web.json_response({'status': 'disabled', 'message': 'Live music disabled. Placeholder set.'})
+
         if track_info:
             await music_manager.update_music_status(track_info)
             return web.json_response({'status': 'success'})
         else:
-            # Если пустой трек, очищаем статус
             await music_manager.update_music_status(None)
             return web.json_response({'status': 'cleared'})
+
             
     except Exception as e:
         logging.error(f"Ошибка обработки запроса: {e}")
@@ -90,19 +126,26 @@ async def handle_toggle(request):
     
     if action == 'enable':
         music_manager.enable()
+        # Обновляем текущий статус сразу
+        await music_manager.update_music_status(music_manager.current_status)
         return web.json_response({'status': 'enabled'})
     elif action == 'disable':
-        music_manager.disable()
+        await music_manager.disable_with_placeholder()
         return web.json_response({'status': 'disabled'})
     else:
         return web.json_response({'status': 'error', 'message': 'Unknown action'}, status=400)
+
     
 async def handle_get_state(request):
-    """Возвращает текущее состояние музыки"""
+    """Возвращает текущее состояние музыки для клиента"""
     global music_manager
     if music_manager is None:
         return web.json_response({'enabled': False})
-    return web.json_response({'enabled': music_manager.is_enabled})
+
+    # live включён только если is_enabled=True и forced_status нет
+    live_active = music_manager.is_enabled and music_manager.forced_status is None
+    return web.json_response({'enabled': live_active})
+
 
 
 
@@ -152,22 +195,19 @@ async def start_web_server(port=8888):
 
 
 
-async def disable_with_placeholder(self):
-        """Отключает обновление и ставит статичный статус"""
-        self.is_enabled = False
-        save_state(STATE_FILE, False)
-        placeholder = "олег"
-        try:
-            await self.client(UpdateProfileRequest(about=placeholder))
-            self.current_status = placeholder
-            logging.info("⏸ Музыкальный статус выключен и заменён заглушкой.")
-        except Exception as e:
-            logging.error(f"Ошибка при установке заглушки: {e}")
-
-def init_music_manager(client):
-    """Инициализация менеджера музыки (должна быть вызвана из main)"""
+async def init_music_manager(client):
     global music_manager
     music_manager = MusicStatusManager(client)
+    
+    # Загружаем состояние из файла
+    saved = load_state(STATE_FILE)
+    if saved is not None:
+        if saved:
+            music_manager.enable()
+        else:
+            # forced_status сразу выставляем, live выключен
+            await music_manager.disable_with_placeholder()
+    
     logging.info("✅ MusicManager инициализирован")
     return music_manager
 

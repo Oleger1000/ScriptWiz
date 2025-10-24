@@ -3,14 +3,13 @@ from json_state import save_state
 from config import WEATHER_STATE_FILE, SCHEDULE_STATE_FILE, CONTROL_CHAT_ID, AVATARS_DIR, MUSIC_STATE_FILE
 import logging
 from mention_all import mention_all
-from music_status import music_manager
 
 # в начале файла
 from images import get_random_avatar, prepare_image
 from telethon.tl.functions.photos import UploadProfilePhotoRequest
 
 
-async def handle_command(client, event, states):
+async def handle_command(client, event, states, music_manager):
     text = event.raw_text.strip().lower()
     chat_id = event.chat_id
     weather_enabled = states['weather']
@@ -77,18 +76,21 @@ async def handle_command(client, event, states):
             states['schedule'] = False
             save_state(SCHEDULE_STATE_FILE, False)
             await event.reply("❌ Расписание выключено.")
+        case "выкл_музыка":
+            if music_manager:
+                music_manager.disable_with_placeholder()
+            states['music'] = False
+            save_state(MUSIC_STATE_FILE, False)
+            await event.reply("❌ Живой статус музыки выключен. Установлен статичный плейсхолдер.")
+
         case "вкл_музыка":
             if music_manager:
                 music_manager.enable()
+                await music_manager.update_music_status(music_manager.current_status)
             states['music'] = True
             save_state(MUSIC_STATE_FILE, True)
             await event.reply("✅ Живой статус музыки включён.")
-        case "выкл_музыка":
-            if music_manager:
-                await music_manager.disable_with_placeholder()
-            states['music'] = False
-            save_state(MUSIC_STATE_FILE, False)
-            await event.reply("❌ Живой статус музыки выключен. Установлен статичный статус.")
+
         case "статус":
             status_text = (
                 f"🌦 Погода: {'включён ✅' if states['weather'] else 'выключен ❌'}\n"

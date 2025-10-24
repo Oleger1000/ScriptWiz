@@ -1,9 +1,8 @@
 import os
 
 # Telegram
-API_ID = 24419438
-API_HASH = 'f61996692d635486ba64466865ac3424'
-SESSION_NAME = 'tg_avatar_session'
+
+SESSION_NAME = 'tg_multiscript'
 
 CONTROL_CHAT_ID = -4899683243
 GROUP_CHAT_ID = -1002238157416

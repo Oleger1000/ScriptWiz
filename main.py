@@ -14,6 +14,10 @@ logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
 # Инициализация клиента
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+from music_status import init_music_manager
+music_manager = init_music_manager(client)
+
+
 
 # Состояния
 states = {
@@ -50,7 +54,7 @@ async def job_avatar():
 @client.on(events.NewMessage)
 async def on_message(event):
     try:
-        await handle_command(client, event, states)
+        await handle_command(client, event, states, music_manager)
     except Exception as e:
         logging.exception(f"Ошибка в обработчике: {e}")
 
